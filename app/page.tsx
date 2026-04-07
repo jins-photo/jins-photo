@@ -34,10 +34,11 @@ export default function Page() {
 
   return (
     <div className="min-h-screen bg-black text-white p-4 font-sans">
+      {/* 상단 바 */}
       <div className="flex justify-between items-center mb-6 bg-zinc-900 p-4 rounded-3xl border border-white/10 sticky top-0 z-[100] backdrop-blur-md">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-black cursor-pointer" onClick={() => setCurrentPath("")}>JINS PHOTO</h1>
-          <select value={lang} onChange={(e) => {setLang(e.target.value); localStorage.setItem('p_lng', e.target.value);}} className="bg-zinc-800 text-[10px] rounded px-1 outline-none">
+          <select value={lang} onChange={(e) => {setLang(e.target.value); localStorage.setItem('p_lng', e.target.value);}} className="bg-zinc-800 text-[10px] rounded px-1 border-none outline-none">
             <option value="ko">KR</option><option value="ja">JP</option><option value="en">EN</option>
           </select>
         </div>
@@ -49,6 +50,7 @@ export default function Page() {
         </button>
       </div>
 
+      {/* 폴더 그리드 */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-10">
         {items.folders.map(f => {
           const pk = currentPath + f;
@@ -82,10 +84,11 @@ export default function Page() {
         })}
       </div>
 
+      {/* 사진 그리드 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {items.files.map(file => (
-          <div key={file} className="relative aspect-square rounded-[2rem] overflow-hidden bg-zinc-900 border border-zinc-800 shadow-lg group">
-            <img src={`${R2_URL}/${currentPath}${file}`} className="w-full h-full object-cover" onClick={() => setSelectedImg(`${R2_URL}/${currentPath}${file}`)} loading="lazy" />
+          <div key={file} className="relative aspect-square rounded-[2rem] overflow-hidden bg-zinc-900 border border-zinc-800 group shadow-lg">
+            <img src={`${R2_URL}/${currentPath}${file}`} className="w-full h-full object-cover cursor-zoom-in" onClick={() => setSelectedImg(`${R2_URL}/${currentPath}${file}`)} loading="lazy" />
             <div className="absolute top-3 right-3 flex gap-2">
               <button onClick={() => { navigator.clipboard.writeText(`${R2_URL}/${currentPath}${file}`); alert(t.copyOk); }} className="w-9 h-9 bg-white text-black rounded-full flex items-center justify-center text-lg font-bold shadow-xl">🔗</button>
               {auth.role === 'admin' && <button onClick={() => { if(confirm(t.delOk)) fetch(`${WORKER_URL}?path=${currentPath}${file}`, {method:'DELETE'}).then(()=>window.location.reload()); }} className="w-9 h-9 bg-red-600 text-white rounded-full flex items-center justify-center text-lg font-bold shadow-xl">✕</button>}
@@ -94,6 +97,7 @@ export default function Page() {
         ))}
       </div>
 
+      {/* 전체 화면 확대 */}
       {selectedImg && (
         <div className="fixed inset-0 bg-black/95 z-[1000] flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setSelectedImg(null)}>
           <img src={selectedImg} className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" />
