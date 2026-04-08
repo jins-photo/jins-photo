@@ -38,10 +38,47 @@ export default function Page() {
       localStorage.setItem('jins_authenticated', 'true');
       setIsLocked(false);
       fetchData();
-    } else { 
-      alert("비밀번호가 틀렸습니다."); 
-      setPassInput(""); 
-    }
+    } else { alert("비번 오류"); setPassInput(""); }
+  };
+
+  // 업로드 기능
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('path', currentPath);
+    try {
+      const res = await fetch(WORKER_URL, { method: 'POST', body: formData });
+      if (res.ok) { alert("업로드 완료!"); fetchData(); }
+    } catch (err) { alert("업로드 실패"); }
+  };
+
+  // 새 폴더 생성
+  const createFolder = async () => {
+    const folderName = prompt("폴더명을 입력하세요:");
+    if (!folderName) return;
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: currentPath, folderName })
+      });
+      if (res.ok) { alert("폴더 생성!"); fetchData(); }
+    } catch (err) { alert("실패"); }
+  };
+
+  // [신규] 파일 삭제 (휴지통으로 이동)
+  const deleteFile = async (fileName: string) => {
+    if (!confirm(`${fileName}을 휴지통으로 보낼까요?`)) return;
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: currentPath, fileName })
+      });
+      if (res.ok) { alert("휴지통 이동 완료"); fetchData(); setSelectedImg(null); }
+    } catch (err) { alert("삭제 실패"); }
   };
 
   const goBack = () => {
@@ -52,26 +89,7 @@ export default function Page() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    alert("링크가 복사되었습니다!");
-  };
-
-  const setFolderPassword = (folder: string) => {
-    const pw = prompt(`${folder} 폴더 비밀번호를 설정하세요:`);
-    if (pw) {
-      localStorage.setItem(`pw_${currentPath}${folder}`, pw);
-      alert("비밀번호 설정 완료!");
-    }
-    setActiveMenu(null);
-  };
-
-  const enterFolder = (folder: string) => {
-    const targetPath = currentPath + folder + "/";
-    const savedPw = localStorage.getItem(`pw_${targetPath}`);
-    if (savedPw) {
-      const input = prompt("비밀번호를 입력하세요:");
-      if (input !== savedPw) return alert("틀렸습니다.");
-    }
-    setCurrentPath(targetPath);
+    alert("링크 복사됨!");
   };
 
   if (isLocked) {
@@ -95,9 +113,14 @@ export default function Page() {
              <button onClick={() => { localStorage.removeItem('jins_authenticated'); setIsLocked(true); }} style={{ background: '#3f3f46', border: 'none', color: 'white', padding: '6px 10px', borderRadius: '10px', fontSize: '11px' }}>🔒 LOCK</button>
           </div>
         </div>
+        
         <div style={{ display: 'flex', gap: '10px' }}>
           {currentPath && <button onClick={goBack} style={{ flex: '0.4', background: '#3f3f46', border: 'none', color: 'white', padding: '12px', borderRadius: '15px', fontWeight: 'bold' }}>⬅️ 이전</button>}
-          <button onClick={() => alert("준비중")} style={{ flex: 1, background: '#2563eb', border: 'none', color: 'white', padding: '12px', borderRadius: '15px', fontWeight: 'bold' }}>📤 업로드</button>
+          <label style={{ flex: 1, background: '#2563eb', color: 'white', padding: '12px', borderRadius: '15px', fontWeight: 'bold', textAlign: 'center', cursor: 'pointer' }}>
+            📤 업로드
+            <input type="file" onChange={handleUpload} style={{ display: 'none' }} />
+          </label>
+          <button onClick={createFolder} style={{ flex: 1, background: '#27272a', border: '1px solid #3f3f46', color: 'white', padding: '12px', borderRadius: '15px', fontWeight: 'bold' }}>➕ 새 폴더</button>
         </div>
       </div>
 
@@ -106,7 +129,7 @@ export default function Page() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '15px' }}>
         {items.folders.map(f => (
           <div key={f} style={{ position: 'relative' }}>
-            <div onClick={() => enterFolder(f)} style={{ background: '#18181b', padding: '20px', borderRadius: '25px', textAlign: 'center', cursor: 'pointer', border: '1px solid #27272a' }}>
+            <div onClick={() => setCurrentPath(currentPath + f + "/")} style={{ background: '#18181b', padding: '20px', borderRadius: '25px', textAlign: 'center', cursor: 'pointer', border: '1px solid #27272a' }}>
               <span style={{ fontSize: '40px' }}>📂</span>
               <div style={{ fontSize: '11px', marginTop: '10px', fontWeight: 'bold', color: '#a1a1aa' }}>{f.toUpperCase()}</div>
             </div>
@@ -114,7 +137,7 @@ export default function Page() {
             {activeMenu === f && (
               <div style={{ position: 'absolute', top: '40px', right: '5px', background: '#27272a', border: '1px solid #3f3f46', borderRadius: '12px', zIndex: 100, padding: '5px', width: '130px' }}>
                 <button onClick={() => { copyToClipboard(`${window.location.origin}?path=${currentPath}${f}/`); setActiveMenu(null); }} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'white', padding: '10px', fontSize: '12px' }}>🔗 폴더 공유</button>
-                <button onClick={() => setFolderPassword(f)} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'white', padding: '10px', fontSize: '12px', borderTop: '1px solid #3f3f46' }}>🔐 비번 설정</button>
+                <button onClick={() => deleteFile(f + "/")} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#ef4444', padding: '10px', fontSize: '12px', borderTop: '1px solid #3f3f46' }}>🗑️ 삭제</button>
               </div>
             )}
           </div>
@@ -123,15 +146,16 @@ export default function Page() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px', marginTop: '20px' }}>
         {items.files.map(file => (
-          <img key={file} src={`${R2_URL}/${currentPath}${file}`} style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '15px', cursor: 'pointer', border: '1px solid #27272a' }} onClick={() => setSelectedImg(`${R2_URL}/${currentPath}${file}`)} />
+          <img key={file} src={`${R2_URL}/${currentPath}${file}`} style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '15px', cursor: 'pointer', border: '1px solid #27272a' }} onClick={() => setSelectedImg(file)} />
         ))}
       </div>
 
       {selectedImg && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.95)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <img src={selectedImg} style={{ maxWidth: '95%', maxHeight: '80%', borderRadius: '10px' }} onClick={() => setSelectedImg(null)} />
+          <img src={`${R2_URL}/${currentPath}${selectedImg}`} style={{ maxWidth: '95%', maxHeight: '80%', borderRadius: '10px' }} onClick={() => setSelectedImg(null)} />
           <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
-            <button onClick={() => copyToClipboard(selectedImg)} style={{ background: '#2563eb', border: 'none', color: 'white', padding: '10px 20px', borderRadius: '10px', fontWeight: 'bold' }}>🔗 사진 공유</button>
+            <button onClick={() => copyToClipboard(`${R2_URL}/${currentPath}${selectedImg}`)} style={{ background: '#2563eb', border: 'none', color: 'white', padding: '10px 20px', borderRadius: '10px', fontWeight: 'bold' }}>🔗 링크 복사</button>
+            <button onClick={() => deleteFile(selectedImg)} style={{ background: '#ef4444', border: 'none', color: 'white', padding: '10px 20px', borderRadius: '10px', fontWeight: 'bold' }}>🗑️ 삭제</button>
             <button onClick={() => setSelectedImg(null)} style={{ background: '#3f3f46', border: 'none', color: 'white', padding: '10px 20px', borderRadius: '10px', fontWeight: 'bold' }}>닫기</button>
           </div>
         </div>
