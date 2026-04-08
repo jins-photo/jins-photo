@@ -1,12 +1,41 @@
 "use client";
 import { useState, useEffect } from 'react';
 
+// [이미지 처리 엔진] 긴 쪽 2000px + WebP 변환
+const processImage = (file: File): Promise<Blob> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const max_size = 2000;
+
+        if (width > height) {
+          if (width > max_size) { height *= max_size / width; width = max_size; }
+        } else {
+          if (height > max_size) { width *= max_size / height; height = max_size; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => resolve(blob as Blob), 'image/webp', 0.8);
+      };
+    };
+  });
+};
+
 export default function Page() {
   const [isLocked, setIsLocked] = useState(true);
   const [passInput, setPassInput] = useState("");
   const [currentPath, setCurrentPath] = useState("");
   const [folderPw, setFolderPw] = useState(""); 
-  const [items, setItems] = useState({ folders: [], files: [], locked: false, lockedFolders: [] as string[] });
+  const [items, setItems] = useState({ folders: [], files: [], locked: false });
   const [selectedImg, setSelectedImg] = useState<string | null>(null);
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [activeAdminMenu, setActiveAdminMenu] = useState(false);
@@ -16,8 +45,7 @@ export default function Page() {
   const WORKER_URL = "https://jins-photo-list.aa841020.workers.dev";
 
   useEffect(() => {
-    const auth = localStorage.getItem('jins_authenticated');
-    if (auth === 'true') {
+    if (localStorage.getItem('jins_authenticated') === 'true') {
       setIsLocked(false);
       fetchData();
     }
@@ -27,11 +55,9 @@ export default function Page() {
     try {
       const res = await fetch(`${WORKER_URL}?path=${currentPath}&pw=${folderPw}`);
       const data = await res.json();
-      
       if (data.locked) {
         const input = prompt("🔐 이 폴더는 비밀번호가 걸려있습니다:");
-        if (input) setFolderPw(input);
-        else goBack();
+        if (input) setFolderPw(input); else goBack();
       } else {
         let sortedFiles = [...(data.files || [])];
         sortedFiles.sort((a, b) => sortOrder === 'newest' ? b.localeCompare(a) : a.localeCompare(b));
@@ -43,33 +69,25 @@ export default function Page() {
   const handleUnlock = (e: React.FormEvent) => {
     e.preventDefault();
     const masterPw = localStorage.getItem('jins_master_pw') || "1234";
-    if (passInput === masterPw) {
-      localStorage.setItem('jins_authenticated', 'true');
-      setIsLocked(false);
-    } else { alert("비밀번호 오류"); setPassInput(""); }
+    if (passInput === masterPw) { setIsLocked(false); localStorage.setItem('jins_authenticated', 'true'); }
+    else { alert("비번 오류"); setPassInput(""); }
   };
 
-  const changeMasterPw = () => {
-    const masterPw = localStorage.getItem('jins_master_pw') || "1234";
-    const current = prompt("현재 관리자 비밀번호:");
-    if (current !== masterPw) return alert("틀렸습니다.");
-    const next = prompt("새 비밀번호:");
-    if (next) {
-      localStorage.setItem('jins_master_pw', next);
-      alert("변경 완료");
-    }
-    setActiveAdminMenu(false);
-  };
-
+  // [업로드] 형님/지인 공통 적용 (2000px WebP 변환)
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
+    // 변환 로직 가동
+    const processedBlob = await processImage(file);
+    const newFileName = file.name.split('.')[0] + ".webp";
+
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', processedBlob, newFileName);
     formData.append('path', currentPath);
-    await fetch(WORKER_URL, { method: 'POST', body: formData });
-    fetchData();
-    setActiveAdminMenu(false);
+    
+    const res = await fetch(WORKER_URL, { method: 'POST', body: formData });
+    if (res.ok) { fetchData(); setActiveAdminMenu(false); }
   };
 
   const createFolder = async () => {
@@ -143,32 +161,35 @@ export default function Page() {
                   <input type="file" onChange={handleUpload} style={{ display: 'none' }} />
                 </label>
                 <button onClick={createFolder} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'white', padding: '12px', fontSize: '14px', borderBottom: '1px solid #27272a' }}>➕ 새 폴더 생성</button>
-                <button onClick={changeMasterPw} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#a1a1aa', padding: '12px', fontSize: '14px' }}>⚙️ 관리자 비번변경</button>
+                <button onClick={() => {
+                  const masterPw = localStorage.getItem('jins_master_pw') || "1234";
+                  const cur = prompt("현재 비번:");
+                  if(cur === masterPw) {
+                    const next = prompt("새 비번:");
+                    if(next) { localStorage.setItem('jins_master_pw', next); alert("변경완료"); }
+                  } else alert("틀림");
+                  setActiveAdminMenu(false);
+                }} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#a1a1aa', padding: '12px', fontSize: '14px' }}>⚙️ 관리자 비번변경</button>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {currentPath && <button onClick={goBack} style={{ background: '#18181b', border: '1px solid #27272a', color: 'white', padding: '10px 20px', borderRadius: '12px', marginBottom: '20px', fontWeight: 'bold', fontSize: '14px' }}>⬅️ 뒤로가기</button>}
+      {currentPath && <button onClick={goBack} style={{ background: '#18181b', border: '1px solid #27272a', color: 'white', padding: '10px 20px', borderRadius: '12px', marginBottom: '20px', fontSize: '14px' }}>⬅️ 뒤로가기</button>}
 
-      {/* 폴더 그리드 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '15px' }}>
         {items.folders.map(f => (
           <div key={f} style={{ position: 'relative' }}>
-            <div onClick={() => setCurrentPath(currentPath + f + "/")} style={{ background: '#18181b', padding: '25px 15px', borderRadius: '25px', textAlign: 'center', cursor: 'pointer', border: '1px solid #27272a', position: 'relative' }}>
-              {/* 열쇠 마크 (비번 걸린 폴더만 표시) - Worker에서 lockedFolders 정보를 준다고 가정 */}
-              {(items as any).lockedFolders?.includes(f) && (
-                <span style={{ position: 'absolute', top: '12px', left: '15px', fontSize: '14px' }}>🔒</span>
-              )}
+            <div onClick={() => setCurrentPath(currentPath + f + "/")} style={{ background: '#18181b', padding: '25px 15px', borderRadius: '25px', textAlign: 'center', cursor: 'pointer', border: '1px solid #27272a' }}>
               <span style={{ fontSize: '45px' }}>📂</span>
-              <div style={{ fontSize: '12px', marginTop: '12px', fontWeight: '600', color: '#e4e4e7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f}</div>
+              <div style={{ fontSize: '12px', marginTop: '12px', fontWeight: '600', color: '#e4e4e7' }}>{f}</div>
             </div>
             <button onClick={() => setActiveMenu(activeMenu === f ? null : f)} style={{ position: 'absolute', top: '10px', right: '15px', background: 'none', border: 'none', color: '#52525b', fontSize: '20px' }}>⋮</button>
             {activeMenu === f && (
               <div style={{ position: 'absolute', top: '40px', right: '5px', background: '#27272a', border: '1px solid #3f3f46', borderRadius: '12px', zIndex: 100, padding: '5px', width: '140px' }}>
                 <button onClick={() => setServerPassword(f)} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#fbbf24', padding: '10px', fontSize: '12px' }}>🔐 지인 비번설정</button>
-                <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}?path=${currentPath}${f}/`); alert("공유 링크 복사!"); setActiveMenu(null); }} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'white', padding: '10px', fontSize: '12px', borderTop: '1px solid #3f3f46' }}>🔗 공유 링크 복사</button>
+                <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}?path=${currentPath}${f}/`); alert("복사!"); setActiveMenu(null); }} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'white', padding: '10px', fontSize: '12px', borderTop: '1px solid #3f3f46' }}>🔗 공유 링크 복사</button>
                 <button onClick={() => deleteFile(f + "/")} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#ef4444', padding: '10px', fontSize: '12px', borderTop: '1px solid #3f3f46' }}>🗑️ 폴더 삭제</button>
               </div>
             )}
@@ -176,14 +197,12 @@ export default function Page() {
         ))}
       </div>
 
-      {/* 사진 그리드 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px', marginTop: '20px' }}>
         {items.files.map(file => (
           <img key={file} src={`${R2_URL}/${currentPath}${file}`} style={{ width: '100%', height: '170px', objectFit: 'cover', borderRadius: '18px', cursor: 'pointer', border: '1px solid #27272a' }} onClick={() => setSelectedImg(file)} />
         ))}
       </div>
 
-      {/* 이미지 확대 */}
       {selectedImg && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.98)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setSelectedImg(null)}>
           <img src={`${R2_URL}/${currentPath}${selectedImg}`} style={{ maxWidth: '95%', maxHeight: '80%', borderRadius: '10px' }} />
@@ -193,8 +212,7 @@ export default function Page() {
           </div>
         </div>
       )}
-      
-      <div onClick={() => setCurrentPath("trash/")} style={{ position: 'fixed', bottom: '30px', right: '30px', width: '60px', height: '60px', background: '#18181b', borderRadius: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #27272a', cursor: 'pointer', fontSize: '24px', boxShadow: '0 5px 15px rgba(0,0,0,0.5)' }}>🗑️</div>
+      <div onClick={() => setCurrentPath("trash/")} style={{ position: 'fixed', bottom: '30px', right: '30px', width: '60px', height: '60px', background: '#18181b', borderRadius: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #27272a', cursor: 'pointer', fontSize: '24px' }}>🗑️</div>
     </div>
   );
 }
