@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 
-// [이미지 최적화 엔진] 2000px WebP 변환
+// [이미지 최적화] 2000px WebP 변환
 const processImage = (file: File): Promise<Blob> => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -37,7 +37,6 @@ export default function Page() {
   const R2_URL = "https://pub-9dc533983760465eb97ca8621cec1e08.r2.dev";
   const WORKER_URL = "https://jins-photo-list.aa841020.workers.dev";
 
-  // 데이터 불러오기 함수 (독립 선언)
   const fetchData = async () => {
     try {
       const res = await fetch(`${WORKER_URL}?path=${currentPath}&pw=${folderPw}`);
@@ -47,18 +46,17 @@ export default function Page() {
         if (input) setFolderPw(input); else goBack();
       } else {
         let sortedFiles = [...(data.files || [])];
+        // 정렬 로직 적용
         sortedFiles.sort((a, b) => sortOrder === 'newest' ? b.localeCompare(a) : a.localeCompare(b));
         setItems({ ...data, files: sortedFiles });
       }
-    } catch (e) { console.error("로드 에러", e); }
+    } catch (e) { console.error(e); }
   };
 
-  // 인증 상태 확인 및 데이터 자동 로드
   useEffect(() => {
-    const auth = localStorage.getItem('jins_authenticated');
-    if (auth === 'true') {
+    if (localStorage.getItem('jins_authenticated') === 'true') {
       setIsLocked(false);
-      fetchData(); // 인증된 상태면 즉시 데이터 로드
+      fetchData();
     }
   }, [currentPath, folderPw, sortOrder]);
 
@@ -68,12 +66,8 @@ export default function Page() {
     if (passInput === mpw) {
       localStorage.setItem('jins_authenticated', 'true');
       setIsLocked(false);
-      // 로그인 성공 직후 fetchData를 수동으로 한 번 더 호출해서 바로 폴더가 보이게 함
-      setTimeout(() => fetchData(), 100); 
-    } else {
-      alert("비밀번호 오류");
-      setPassInput("");
-    }
+      setTimeout(() => fetchData(), 100);
+    } else alert("비번 오류");
   };
 
   const setItemPassword = async (name: string, isFolder: boolean) => {
@@ -81,9 +75,10 @@ export default function Page() {
     const target = currentPath + name + (isFolder ? "/" : "");
     await fetch(`${WORKER_URL}/set-password`, {
       method: 'POST',
-      body: JSON.stringify({ target, password: pw })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target, password: pw || "" })
     });
-    fetchData();
+    setTimeout(() => fetchData(), 300);
     setActiveMenu(null);
   };
 
@@ -97,6 +92,18 @@ export default function Page() {
     await fetch(WORKER_URL, { method: 'POST', body: formData });
     fetchData();
     setActiveAdminMenu(false);
+  };
+
+  const deleteItem = async (name: string, isFolder: boolean) => {
+    if (!confirm(`${name}을(를) 삭제하시겠습니까?`)) return;
+    await fetch(WORKER_URL, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: currentPath, fileName: isFolder ? name + "/" : name })
+    });
+    fetchData();
+    setActiveMenu(null);
+    setSelectedImg(null);
   };
 
   const goBack = () => {
@@ -121,39 +128,56 @@ export default function Page() {
     <div style={{ backgroundColor: 'black', minHeight: '100vh', color: 'white', padding: '20px', fontFamily: 'sans-serif' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
         <h1 onClick={() => {setCurrentPath(""); setFolderPw("");}} style={{ cursor: 'pointer', margin: 0, fontSize: '22px' }}>JINS <span style={{color:'#3b82f6'}}>PHOTO</span></h1>
-        <button onClick={() => setActiveAdminMenu(!activeAdminMenu)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '24px', letterSpacing: '2px' }}>•••</button>
-        {activeAdminMenu && (
-          <div style={{ position: 'absolute', top: '60px', right: '20px', background: '#18181b', border: '1px solid #333', borderRadius: '15px', zIndex: 200, padding: '10px', width: '160px' }}>
-            <label style={{ display: 'block', padding: '10px', cursor: 'pointer', borderBottom: '1px solid #222' }}>📤 업로드 <input type="file" onChange={handleUpload} style={{ display: 'none' }} /></label>
-            <button onClick={() => {
-              const name = prompt("폴더명:");
-              if(name) fetch(WORKER_URL, { method: 'PUT', body: JSON.stringify({ path: currentPath, folderName: name }) }).then(()=>fetchData());
-              setActiveAdminMenu(false);
-            }} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'white', padding: '10px', borderBottom: '1px solid #222' }}>➕ 새 폴더</button>
-            <button onClick={() => { localStorage.removeItem('jins_authenticated'); window.location.reload(); }} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#666', padding: '10px' }}>🔒 로그아웃</button>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          {/* [정렬 버튼 복구] */}
+          <button onClick={() => setSortOrder(sortOrder === 'newest' ? 'oldest' : 'newest')} style={{ background: '#18181b', border: '1px solid #27272a', color: '#a1a1aa', padding: '6px 12px', borderRadius: '10px', fontSize: '12px' }}>
+            {sortOrder === 'newest' ? '↓ 최신순' : '↑ 과거순'}
+          </button>
+          
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setActiveAdminMenu(!activeAdminMenu)} style={{ background: 'none', border: 'none', color: 'white', fontSize: '24px' }}>•••</button>
+            {activeAdminMenu && (
+              <div style={{ position: 'absolute', top: '40px', right: '0', background: '#18181b', border: '1px solid #333', borderRadius: '15px', zIndex: 200, padding: '10px', width: '160px' }}>
+                <label style={{ display: 'block', padding: '12px', cursor: 'pointer', borderBottom: '1px solid #222' }}>📤 사진 업로드 <input type="file" onChange={handleUpload} style={{ display: 'none' }} /></label>
+                <button onClick={() => {
+                  const name = prompt("새 폴더명:");
+                  if(name) fetch(WORKER_URL, { method: 'PUT', body: JSON.stringify({ path: currentPath, folderName: name }) }).then(()=>fetchData());
+                  setActiveAdminMenu(false);
+                }} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'white', padding: '12px', borderBottom: '1px solid #222' }}>➕ 새 폴더</button>
+                <button onClick={() => {
+                  const mpw = localStorage.getItem('jins_master_pw') || "1234";
+                  if(prompt("현재 비번:") === mpw) {
+                    const next = prompt("새 비번:");
+                    if(next) { localStorage.setItem('jins_master_pw', next); alert("변경완료"); }
+                  } else alert("틀림");
+                  setActiveAdminMenu(false);
+                }} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#a1a1aa', padding: '12px' }}>⚙️ 비번 변경</button>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {currentPath && <button onClick={goBack} style={{ background: '#18181b', border: '1px solid #27272a', color: 'white', padding: '8px 15px', borderRadius: '10px', marginBottom: '20px', fontSize: '13px' }}>⬅️ 뒤로가기</button>}
 
-      {/* 폴더 목록 */}
+      {/* 폴더 리스트 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '15px' }}>
         {items.folders.map(f => {
-          // 자물쇠 확인 로직 강화
           const isFolderLocked = items.lockedItems?.some(item => item === f || item === f + "/");
           return (
             <div key={f} style={{ position: 'relative' }}>
               <div onClick={() => setCurrentPath(currentPath + f + "/")} style={{ background: '#18181b', padding: '25px 15px', borderRadius: '25px', textAlign: 'center', border: '1px solid #27272a', position: 'relative' }}>
-                {isFolderLocked && <span style={{ position: 'absolute', top: '12px', left: '15px', fontSize: '14px' }}>🔒</span>}
+                {isFolderLocked && <span style={{ position: 'absolute', top: '12px', left: '15px' }}>🔒</span>}
                 <span style={{ fontSize: '45px' }}>📂</span>
                 <div style={{ fontSize: '12px', marginTop: '10px', fontWeight: 'bold' }}>{f}</div>
               </div>
               <button onClick={() => setActiveMenu(activeMenu === f ? null : f)} style={{ position: 'absolute', top: '10px', right: '15px', background: 'none', border: 'none', color: '#555', fontSize: '20px' }}>⋮</button>
               {activeMenu === f && (
-                <div style={{ position: 'absolute', top: '40px', right: '5px', background: '#27272a', borderRadius: '12px', zAddIndex: 100, padding: '5px', width: '140px', border: '1px solid #333' }}>
+                <div style={{ position: 'absolute', top: '40px', right: '5px', background: '#27272a', borderRadius: '12px', zIndex: 100, padding: '5px', width: '140px', border: '1px solid #333' }}>
                   <button onClick={() => setItemPassword(f, true)} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#fbbf24', padding: '10px', fontSize: '12px' }}>🔐 비번설정</button>
-                  <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}?path=${currentPath}${f}/`); alert("복사!"); setActiveMenu(null); }} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'white', padding: '10px', fontSize: '12px' }}>🔗 링크복사</button>
+                  <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}?path=${currentPath}${f}/`); alert("복사!"); setActiveMenu(null); }} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'white', padding: '10px', fontSize: '12px', borderTop: '1px solid #222' }}>🔗 링크복사</button>
+                  <button onClick={() => deleteItem(f, true)} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#ef4444', padding: '10px', fontSize: '12px', borderTop: '1px solid #222' }}>🗑️ 폴더 삭제</button>
                 </div>
               )}
             </div>
@@ -161,7 +185,7 @@ export default function Page() {
         })}
       </div>
 
-      {/* 사진 목록 */}
+      {/* 사진 리스트 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px', marginTop: '20px' }}>
         {items.files.map(file => (
           <div key={file} style={{ position: 'relative' }}>
@@ -171,6 +195,8 @@ export default function Page() {
             {activeMenu === file && (
               <div style={{ position: 'absolute', top: '35px', right: '0', background: '#27272a', borderRadius: '12px', zIndex: 100, padding: '5px', width: '130px', border: '1px solid #333' }}>
                 <button onClick={() => setItemPassword(file, false)} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#fbbf24', padding: '10px', fontSize: '12px' }}>🔐 비번설정</button>
+                {/* [파일 삭제 버튼 추가] */}
+                <button onClick={() => deleteItem(file, false)} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', color: '#ef4444', padding: '10px', fontSize: '12px', borderTop: '1px solid #222' }}>🗑️ 파일 삭제</button>
               </div>
             )}
           </div>
@@ -181,9 +207,8 @@ export default function Page() {
       {selectedImg && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.98)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setSelectedImg(null)}>
           <img src={`${R2_URL}/${currentPath}${selectedImg}`} style={{ maxWidth: '95%', maxHeight: '85%', borderRadius: '10px' }} />
-          <div style={{ marginTop: '20px', display: 'flex', gap: '15px' }} onClick={(e)=>e.stopPropagation()}>
-             <button onClick={() => { if(confirm("삭제?")) fetch(WORKER_URL, { method: 'DELETE', body: JSON.stringify({ path: currentPath, fileName: selectedImg }) }).then(()=>fetchData()); setSelectedImg(null); }} style={{ background: '#ef4444', color: 'white', padding: '10px 20px', borderRadius: '10px', border: 'none', fontWeight: 'bold' }}>🗑️ 삭제</button>
-             <button onClick={() => setSelectedImg(null)} style={{ background: '#333', color: 'white', padding: '10px 20px', borderRadius: '10px', border: 'none' }}>닫기</button>
+          <div style={{ marginTop: '20px' }} onClick={(e)=>e.stopPropagation()}>
+             <button onClick={() => deleteItem(selectedImg, false)} style={{ background: '#ef4444', color: 'white', padding: '12px 25px', borderRadius: '15px', border: 'none', fontWeight: 'bold' }}>🗑️ 삭제</button>
           </div>
         </div>
       )}
